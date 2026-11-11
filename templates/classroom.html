@@ -1,0 +1,568 @@
+{% extends "base.html" %}
+
+{% block title %}Google Classroom - ELEV8 AI Planner{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+    <!-- Top Header & Sync Bar -->
+    <div class="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <div class="flex items-center space-x-2">
+                <span class="w-3 h-3 rounded-full bg-amber-400"></span>
+                <h1 class="text-xl font-bold text-slate-900 tracking-tight">นำเข้าการบ้านจาก Google Classroom</h1>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">เลือกติ๊กการบ้านที่ต้องการวางแผน แล้วให้ AI ย่อยขั้นตอนการทำงาน</p>
+        </div>
+        <button id="btn-sync-classroom" onclick="loadClassroomAssignments(true)" class="inline-flex items-center px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-2xl text-xs font-bold shadow-md shadow-sky-500/20 transition">
+            <i class="fa-solid fa-arrows-rotate mr-2" id="sync-icon"></i> ซิงก์ข้อมูลล่าสุดจาก Classroom
+        </button>
+    </div>
+
+    <!-- Filters & Search -->
+    <div class="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex-1 relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+            <input type="text" id="search-input" onkeyup="filterAssignments()" placeholder="ค้นหาตามชื่อการบ้าน หรือชื่อวิชา..." class="w-full pl-9 pr-4 py-2 text-xs rounded-2xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500">
+        </div>
+        <div class="flex items-center space-x-2">
+            <select id="course-filter" onchange="filterAssignments()" class="text-xs font-semibold border border-slate-200 rounded-2xl px-3 py-2 bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500/20">
+                <option value="ALL">ทุกรายวิชา (All Courses)</option>
+            </select>
+            <button onclick="toggleSelectAll()" class="px-3.5 py-2 text-xs font-bold bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-2xl transition">
+                เลือกทั้งหมด
+            </button>
+        </div>
+    </div>
+
+    <!-- Loading State -->
+    <div id="loading-state" class="hidden py-16 text-center">
+        <div class="inline-block animate-spin text-sky-600 text-3xl mb-3">
+            <i class="fa-solid fa-circle-notch"></i>
+        </div>
+        <p class="text-sm font-bold text-slate-800">กำลังเชื่อมต่อ Google Classroom API...</p>
+        <p class="text-xs text-slate-400 mt-1">กำลังสแกนวิชาและการบ้านของคุณ</p>
+    </div>
+
+    <!-- Assignments List Container -->
+    <div id="assignments-container" class="space-y-3">
+        <!-- Rendered via JavaScript -->
+    </div>
+
+    <!-- Floating Batch Action Bar -->
+    <div id="floating-bar" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3.5 rounded-3xl shadow-2xl flex items-center space-x-5 z-40 transition-all transform translate-y-24 opacity-0 border border-slate-800">
+        <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+            <span class="text-xs font-medium">เลือกอยู่ <strong id="selected-count" class="text-amber-300 font-bold">0</strong> งาน</span>
+        </div>
+        <button onclick="startPlanningForSelected()" class="px-4 py-2 bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white rounded-2xl text-xs font-bold shadow-md transition flex items-center space-x-2">
+            <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i>
+            <span>เริ่มวางแผนงานด้วย AI</span>
+        </button>
+    </div>
+
+</div>
+
+<!-- Phase 1, 2 & 3: Planning Modal with Stepper (Based on Wireframe Image 9, 11 & 3) -->
+<div id="plan-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-3xl shadow-2xl max-w-3xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
+        
+        <!-- Modal Stepper Header (Wireframe Image 9 & 3) -->
+        <div class="px-6 py-4 border-b border-slate-100 bg-white">
+            <div class="flex justify-between items-center mb-3">
+                <div class="flex items-center space-x-2">
+                    <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                    <span class="text-xs font-bold text-sky-700 uppercase tracking-wider">AI Planning Pipeline</span>
+                </div>
+                <button onclick="closePlanModal()" class="w-8 h-8 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center transition">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Stepper (1 -> 2 -> 3) -->
+            <div class="flex items-center justify-center space-x-3 py-1">
+                <div id="step-pill-1" class="flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold bg-sky-600 text-white">
+                    <span>1</span>
+                    <span>เป้าหมาย & เงื่อนไข</span>
+                </div>
+                <div class="w-6 h-0.5 bg-slate-200"></div>
+                <div id="step-pill-2" class="flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-400">
+                    <span>2</span>
+                    <span>Validation Loop</span>
+                </div>
+                <div class="w-6 h-0.5 bg-slate-200"></div>
+                <div id="step-pill-3" class="flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-400">
+                    <span>3</span>
+                    <span>Confirm Plan</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Body Content -->
+        <div class="p-6 overflow-y-auto space-y-5 flex-1 bg-[#f9fafb]">
+            
+            <!-- Target Assignment Card -->
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <span id="modal-course-badge" class="text-[10px] font-bold px-2 py-0.5 rounded bg-sky-100 text-sky-800">วิชา</span>
+                <h3 id="modal-assignment-title" class="text-base font-bold text-slate-900 mt-1">ชื่อการบ้าน</h3>
+                <p id="modal-assignment-desc" class="text-xs text-slate-500 mt-1 line-clamp-2">คำอธิบายงาน</p>
+                <div class="text-[11px] text-slate-400 mt-2 flex items-center space-x-2">
+                    <i class="fa-regular fa-calendar-check text-amber-500"></i>
+                    <span>กำหนดส่ง: <strong id="modal-assignment-due" class="text-slate-700">ไม่ระบุ</strong></span>
+                </div>
+            </div>
+
+            <!-- Custom Input Fields (Wireframe Image 9) -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">
+                        ⏱️ กำหนดเวลาทำงานหรือเวลาเรียนต่อวัน (ชม./วัน)
+                    </label>
+                    <input type="number" id="daily-hours-input" value="2.0" step="0.5" class="w-full text-xs p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">
+                        🎯 Prompt ให้ระบุเป้าหมาย / ข้อกำหนดเพิ่มเติมถึง AI
+                    </label>
+                    <textarea id="custom-prompt-input" rows="2" placeholder="เช่น เน้นแบ่งงานเป็นส่วนๆ เริ่มจากค้นคว้าก่อน และขอภาษาไทยเข้าใจง่าย..." class="w-full text-xs p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"></textarea>
+                </div>
+            </div>
+
+            <!-- Validation Loop Status (Phase 2) -->
+            <div id="modal-validation-banner" class="hidden rounded-2xl p-4 border transition-all bg-white shadow-sm">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div id="val-icon" class="w-8 h-8 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center text-sm">
+                            <i class="fa-solid fa-circle-check"></i>
+                        </div>
+                        <div>
+                            <h4 id="val-title" class="text-xs font-bold text-slate-900">ผลการตรวจสอบอัตโนมัติ (Automated Validation Loop)</h4>
+                            <p id="val-sub" class="text-[11px] text-slate-500">ตรวจสอบความครบถ้วน, ตรรกะงาน และกรอบเวลา</p>
+                        </div>
+                    </div>
+                    <span id="val-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                        รอบที่ 1
+                    </span>
+                </div>
+            </div>
+
+            <!-- Subtasks Review (Wireframe Image 11 & 3: Preview แผนงานที่ AI สร้าง) -->
+            <div id="preview-section" class="hidden bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                <div class="flex justify-between items-center">
+                    <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wider">Preview แผนงานที่ AI สร้าง (แก้ไขได้)</h4>
+                    <button onclick="addNewSubtaskRow()" class="text-xs font-bold text-sky-600 hover:text-sky-700">
+                        + เพิ่มงานย่อย
+                    </button>
+                </div>
+
+                <div class="border border-slate-100 rounded-xl overflow-hidden">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-50 border-b border-slate-100 text-slate-500">
+                            <tr>
+                                <th class="p-2 text-center w-8">#</th>
+                                <th class="p-2">ชื่องาน & คำอธิบาย</th>
+                                <th class="p-2 text-center w-20">Priority</th>
+                                <th class="p-2 text-center w-16">ชม.</th>
+                                <th class="p-2 text-right w-28">วันส่งแนะนำ</th>
+                                <th class="p-2 w-8"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="subtasks-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+
+                <!-- เลือกแอปที่ให้เข้าถึง / แจ้งเตือน (Wireframe Image 3) -->
+                <div class="bg-amber-50/60 p-3.5 rounded-xl border border-amber-200/60 flex items-center justify-between mt-3">
+                    <div class="flex items-center space-x-2.5">
+                        <div class="w-7 h-7 rounded-lg bg-amber-400 text-slate-900 flex items-center justify-center text-xs font-bold">
+                            <i class="fa-solid fa-envelope"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-slate-800">ส่งอีเมลสรุปแผนงานไปยัง Gmail</p>
+                            <p class="text-[10px] text-slate-500">แจ้งเตือนทางอีเมลเมื่อกดยืนยันแผนงาน</p>
+                        </div>
+                    </div>
+                    <input type="checkbox" id="email-toggle" checked class="w-4 h-4 text-sky-600 rounded">
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Modal Footer Buttons -->
+        <div class="px-6 py-4 border-t border-slate-100 bg-white flex justify-between items-center">
+            <button onclick="closePlanModal()" class="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-50">
+                ยกเลิก
+            </button>
+            <div class="space-x-2">
+                <!-- Generate Button (Step 1 -> 2) -->
+                <button id="btn-generate-plan" onclick="triggerAIGeneration()" class="px-5 py-2.5 bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white rounded-2xl text-xs font-bold shadow-md shadow-sky-500/20 transition flex items-center space-x-1.5">
+                    <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i>
+                    <span>Generate My Plan</span>
+                </button>
+                <!-- Confirm Button (Step 3: Wireframe Image 3) -->
+                <button id="btn-confirm-plan" onclick="savePlanToDatabase()" class="hidden px-5 py-2.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-900 rounded-2xl text-xs font-bold shadow-md shadow-amber-400/20 transition flex items-center space-x-1.5">
+                    <i class="fa-solid fa-circle-check"></i>
+                    <span>Confirm Plan</span>
+                </button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allAssignments = [];
+    let selectedAssignmentIds = new Set();
+    let currentPlanningAssignment = null;
+
+    document.addEventListener("DOMContentLoaded", () => {
+        loadClassroomAssignments(false);
+    });
+
+    async function loadClassroomAssignments(refresh = false) {
+        const loading = document.getElementById("loading-state");
+        const container = document.getElementById("assignments-container");
+        const syncIcon = document.getElementById("sync-icon");
+
+        loading.classList.remove("hidden");
+        container.innerHTML = "";
+        syncIcon.classList.add("animate-spin");
+
+        try {
+            const resp = await fetch("/api/classroom/fetch", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ refresh })
+            });
+            const data = await resp.json();
+
+            if (data.success) {
+                allAssignments = data.assignments || [];
+                populateCoursesDropdown(allAssignments);
+                renderAssignments(allAssignments);
+                showToast(`ซิงก์การบ้านสำเร็จ ${allAssignments.length} รายการ`, "success");
+            } else {
+                showToast(data.error || "ไม่สามารถเชื่อมต่อ Classroom ได้", "error");
+            }
+        } catch (e) {
+            showToast("เกิดข้อผิดพลาดในการโหลดข้อมูล", "error");
+        } finally {
+            loading.classList.add("hidden");
+            syncIcon.classList.remove("animate-spin");
+        }
+    }
+
+    function populateCoursesDropdown(assignments) {
+        const select = document.getElementById("course-filter");
+        const courses = new Map();
+        assignments.forEach(a => {
+            if (a.course_id && a.course_name) {
+                courses.set(a.course_id, a.course_name);
+            }
+        });
+
+        select.innerHTML = `<option value="ALL">ทุกรายวิชา (All Courses)</option>`;
+        courses.forEach((name, id) => {
+            const opt = document.createElement("option");
+            opt.value = id;
+            opt.textContent = name;
+            select.appendChild(opt);
+        });
+    }
+
+    function renderAssignments(list) {
+        const container = document.getElementById("assignments-container");
+        container.innerHTML = "";
+
+        if (list.length === 0) {
+            container.innerHTML = `
+                <div class="bg-white p-12 rounded-3xl border border-slate-200 text-center">
+                    <i class="fa-solid fa-inbox text-4xl text-slate-300 mb-3"></i>
+                    <p class="text-sm font-bold text-slate-700">ไม่พบการบ้าน</p>
+                    <p class="text-xs text-slate-400 mt-1">กดปุ่มซิงก์ข้อมูลจาก Classroom ด้านบน</p>
+                </div>
+            `;
+            return;
+        }
+
+        list.forEach(a => {
+            const isChecked = selectedAssignmentIds.has(a.id);
+            const isProcessed = a.is_processed;
+
+            const card = document.createElement("div");
+            card.className = `p-4 rounded-3xl border transition bg-white flex items-center justify-between gap-4 ${
+                isChecked ? 'border-sky-500 ring-2 ring-sky-500/10' : 'border-slate-200/80 hover:border-sky-200'
+            }`;
+
+            card.innerHTML = `
+                <div class="flex items-center space-x-3.5 flex-1 min-w-0">
+                    <input type="checkbox" onchange="toggleSelectAssignment('${a.id}', this.checked)" ${isChecked ? 'checked' : ''} class="w-5 h-5 rounded-md text-sky-600 focus:ring-sky-500 border-slate-300 cursor-pointer">
+                    <div class="truncate">
+                        <div class="flex items-center space-x-2">
+                            <h3 class="text-sm font-bold text-slate-900 truncate">${a.title}</h3>
+                            ${isProcessed ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">วางแผนแล้ว</span>' : ''}
+                        </div>
+                        <p class="text-xs text-slate-500 mt-0.5 line-clamp-1">${a.description || 'ไม่มีคำอธิบาย'}</p>
+                        <div class="flex items-center space-x-3 text-[11px] text-slate-400 mt-1.5">
+                            <span class="text-sky-700 font-semibold"><i class="fa-solid fa-book mr-1"></i>${a.course_name || 'ทั่วไป'}</span>
+                            <span><i class="fa-regular fa-clock mr-1 text-amber-500"></i>${a.due_date || 'ไม่มีกำหนดส่ง'}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-2 flex-shrink-0">
+                    <button onclick="openPlanForAssignment('${a.id}')" class="px-3.5 py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-2xl text-xs font-bold transition flex items-center space-x-1">
+                        <i class="fa-solid fa-wand-magic-sparkles text-amber-500"></i>
+                        <span>วางแผนงานนี้</span>
+                    </button>
+                    ${a.alternate_link ? `<a href="${a.alternate_link}" target="_blank" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center text-xs transition"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : ''}
+                </div>
+            `;
+            container.appendChild(card);
+        });
+
+        updateFloatingBar();
+    }
+
+    function toggleSelectAssignment(id, checked) {
+        if (checked) selectedAssignmentIds.add(id);
+        else selectedAssignmentIds.delete(id);
+        updateFloatingBar();
+    }
+
+    function toggleSelectAll() {
+        if (selectedAssignmentIds.size === allAssignments.length) {
+            selectedAssignmentIds.clear();
+        } else {
+            allAssignments.forEach(a => selectedAssignmentIds.add(a.id));
+        }
+        renderAssignments(allAssignments);
+    }
+
+    function updateFloatingBar() {
+        const bar = document.getElementById("floating-bar");
+        document.getElementById("selected-count").textContent = selectedAssignmentIds.size;
+        if (selectedAssignmentIds.size > 0) {
+            bar.classList.remove("translate-y-24", "opacity-0");
+        } else {
+            bar.classList.add("translate-y-24", "opacity-0");
+        }
+    }
+
+    function filterAssignments() {
+        const query = document.getElementById("search-input").value.toLowerCase();
+        const courseId = document.getElementById("course-filter").value;
+
+        const filtered = allAssignments.filter(a => {
+            const matchQuery = (a.title || "").toLowerCase().includes(query) || (a.course_name || "").toLowerCase().includes(query);
+            const matchCourse = courseId === "ALL" || a.course_id === courseId;
+            return matchQuery && matchCourse;
+        });
+
+        renderAssignments(filtered);
+    }
+
+    // Modal Workflow (Wireframe Image 9, 11, 3)
+    function openPlanForAssignment(id) {
+        const a = allAssignments.find(x => x.id === id);
+        if (!a) return;
+        currentPlanningAssignment = a;
+
+        document.getElementById("modal-assignment-title").textContent = a.title;
+        document.getElementById("modal-assignment-desc").textContent = a.description || "ไม่มีคำอธิบาย";
+        document.getElementById("modal-assignment-due").textContent = a.due_date || "ไม่ระบุ";
+        document.getElementById("modal-course-badge").textContent = a.course_name || "วิชาทั่วไป";
+
+        // Reset Stepper & Sections
+        setStep(1);
+        document.getElementById("modal-validation-banner").classList.add("hidden");
+        document.getElementById("preview-section").classList.add("hidden");
+        document.getElementById("btn-generate-plan").classList.remove("hidden");
+        document.getElementById("btn-confirm-plan").classList.add("hidden");
+
+        document.getElementById("plan-modal").classList.remove("hidden");
+    }
+
+    function closePlanModal() {
+        document.getElementById("plan-modal").classList.add("hidden");
+    }
+
+    function setStep(stepNum) {
+        for (let i = 1; i <= 3; i++) {
+            const pill = document.getElementById(`step-pill-${i}`);
+            if (i <= stepNum) {
+                pill.className = "flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold bg-sky-600 text-white";
+            } else {
+                pill.className = "flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-400";
+            }
+        }
+    }
+
+    async function triggerAIGeneration() {
+        const btn = document.getElementById("btn-generate-plan");
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-circle-notch animate-spin mr-1"></i> กำลังวิเคราะห์และตรวจสอบ...';
+
+        setStep(2);
+        const banner = document.getElementById("modal-validation-banner");
+        banner.classList.remove("hidden");
+        document.getElementById("val-title").textContent = "กำลังดำเนินการ Phase 1 & 2: AI Planning & Validation Loop...";
+        document.getElementById("val-sub").textContent = "AI กำลังแตกงานย่อยและรันการตรวจสอบ 3 ด้าน";
+
+        try {
+            const customPrompt = document.getElementById("custom-prompt-input").value;
+            const payload = {
+                assignment: {
+                    ...currentPlanningAssignment,
+                    description: (currentPlanningAssignment.description || "") + (customPrompt ? `\n[คำสั่งเพิ่มเติม]: ${customPrompt}` : "")
+                }
+            };
+
+            const resp = await fetch("/api/plan/validate-and-generate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await resp.json();
+
+            if (data.success) {
+                const res = data.result;
+                const sourceBadge = data.source === 'n8n' ? '⚡ (ประมวลผลผ่าน n8n Workflow)' : '';
+                showToast(`ประมวลผลสำเร็จ ${sourceBadge}`, 'success');
+
+                document.getElementById("val-title").textContent = (res.passed ? "ผ่านการตรวจสอบเงื่อนไขทั้งหมด (Validation Passed) " : "ครบจำนวนรอบสูงสุด - กรุณาตรวจทานด้วยตนเอง ") + sourceBadge;
+                document.getElementById("val-sub").textContent = `ตรวจสอบความครบถ้วน, ตรรกะงาน และกรอบเวลา ในรอบที่ ${res.iterations_used}`;
+                document.getElementById("val-badge").textContent = `รอบที่ ${res.iterations_used}/${res.max_iterations}`;
+
+                renderPreviewSubtasks(res.plan ? res.plan.subtasks : []);
+                setStep(3);
+
+                document.getElementById("preview-section").classList.remove("hidden");
+                btn.classList.add("hidden");
+                document.getElementById("btn-confirm-plan").classList.remove("hidden");
+            } else {
+                showToast(data.error || "เกิดข้อผิดพลาดในการวางแผน", "error");
+            }
+        } catch (e) {
+            showToast("เกิดข้อผิดพลาดในการเชื่อมต่อ AI", "error");
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Generate My Plan';
+        }
+    }
+
+    function renderPreviewSubtasks(subtasks) {
+        const tbody = document.getElementById("subtasks-table-body");
+        tbody.innerHTML = "";
+        subtasks.forEach((t, i) => appendSubtaskRow(t, i + 1));
+    }
+
+    function appendSubtaskRow(task, order) {
+        const tbody = document.getElementById("subtasks-table-body");
+        const tr = document.createElement("tr");
+        tr.className = "hover:bg-slate-50";
+        tr.innerHTML = `
+            <td class="p-2 text-center font-bold text-slate-400 row-order">${order}</td>
+            <td class="p-2 space-y-1">
+                <input type="text" value="${task.task_title || ''}" class="w-full font-bold text-xs border border-transparent hover:border-slate-300 focus:border-sky-500 rounded px-1 py-0.5 task-title-input">
+                <input type="text" value="${task.description || ''}" placeholder="คำอธิบาย..." class="w-full text-[11px] text-slate-500 border border-transparent hover:border-slate-300 focus:border-sky-500 rounded px-1 py-0.5 task-desc-input">
+            </td>
+            <td class="p-2 text-center">
+                <select class="text-[10px] font-bold rounded border border-slate-200 p-1 task-priority-select">
+                    <option value="HIGH" ${task.priority === 'HIGH' ? 'selected' : ''}>HIGH</option>
+                    <option value="MEDIUM" ${task.priority === 'MEDIUM' ? 'selected' : ''}>MED</option>
+                    <option value="LOW" ${task.priority === 'LOW' ? 'selected' : ''}>LOW</option>
+                </select>
+            </td>
+            <td class="p-2 text-center">
+                <input type="number" step="0.5" value="${task.estimated_hours || 1.0}" class="w-12 text-center text-xs border border-slate-200 rounded p-1 task-hours-input">
+            </td>
+            <td class="p-2 text-right">
+                <input type="text" value="${task.suggested_due_date || ''}" placeholder="YYYY-MM-DD" class="text-[11px] border border-slate-200 rounded p-1 text-right w-24 task-date-input">
+            </td>
+            <td class="p-2 text-center">
+                <button onclick="this.closest('tr').remove(); reorderRows();" class="text-slate-300 hover:text-rose-500"><i class="fa-solid fa-trash-can"></i></button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    function addNewSubtaskRow() {
+        const tbody = document.getElementById("subtasks-table-body");
+        appendSubtaskRow({
+            task_title: "งานย่อยใหม่",
+            description: "รายละเอียดงาน",
+            priority: "MEDIUM",
+            estimated_hours: 1.5,
+            suggested_due_date: ""
+        }, tbody.querySelectorAll("tr").length + 1);
+    }
+
+    function reorderRows() {
+        document.querySelectorAll("#subtasks-table-body tr").forEach((tr, i) => {
+            tr.querySelector(".row-order").textContent = i + 1;
+        });
+    }
+
+    async function savePlanToDatabase() {
+        const btn = document.getElementById("btn-confirm-plan");
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-circle-notch animate-spin mr-1"></i> กำลังบันทึก...';
+
+        const tbody = document.getElementById("subtasks-table-body");
+        const rows = tbody.querySelectorAll("tr");
+        const subtasks = [];
+
+        rows.forEach((tr, index) => {
+            subtasks.push({
+                task_order: index + 1,
+                task_title: tr.querySelector(".task-title-input").value,
+                description: tr.querySelector(".task-desc-input").value,
+                priority: tr.querySelector(".task-priority-select").value,
+                estimated_hours: parseFloat(tr.querySelector(".task-hours-input").value) || 1.0,
+                suggested_due_date: tr.querySelector(".task-date-input").value || null,
+                status: "TODO"
+            });
+        });
+
+        const payload = {
+            assignment: currentPlanningAssignment,
+            subtasks: subtasks,
+            summary: "AI Planned Breakdown",
+            send_email: document.getElementById("email-toggle").checked
+        };
+
+        try {
+            const resp = await fetch("/api/plan/save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await resp.json();
+
+            if (data.success) {
+                showToast("บันทึกแผนงานลงฐานข้อมูล สำเร็จ! 🎉", "success");
+                closePlanModal();
+                selectedAssignmentIds.delete(currentPlanningAssignment.id);
+                renderAssignments(allAssignments);
+            } else {
+                showToast(data.error || "เกิดข้อผิดพลาดในการบันทึก", "error");
+            }
+        } catch (e) {
+            showToast("เกิดข้อผิดพลาดในการเชื่อมต่อ", "error");
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-circle-check mr-1"></i> Confirm Plan';
+        }
+    }
+
+    function startPlanningForSelected() {
+        const firstId = Array.from(selectedAssignmentIds)[0];
+        if (firstId) openPlanForAssignment(firstId);
+    }
+</script>
+{% endblock %}

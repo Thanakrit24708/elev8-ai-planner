@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}Task Detail - {{ project.title }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+    <!-- Breadcrumb -->
+    <div class="flex items-center space-x-2 text-xs text-slate-500">
+        <a href="{{ url_for('dashboard') }}" class="hover:text-sky-600 transition"><i class="fa-solid fa-house mr-1"></i> แดชบอร์ด</a>
+        <span>/</span>
+        <span class="text-slate-800 font-bold truncate">{{ project.title }}</span>
+    </div>
+
+    <!-- Header Card (Wireframe Image 4: Task Detail) -->
+    <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div class="flex-1">
+            <div class="flex items-center space-x-2">
+                <span class="text-xs font-bold text-sky-600 uppercase tracking-wider">AI Daily Briefing</span>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">
+                    {{ project.course_name or 'General Course' }}
+                </span>
+            </div>
+            <h1 class="text-xl font-bold text-slate-900 mt-1">Task Detail: {{ project.title }}</h1>
+            <p class="text-xs text-slate-600 mt-2 leading-relaxed">{{ project.description or 'ไม่มีคำอธิบายเพิ่มเติม' }}</p>
+
+            <!-- Two Badges: ส่งภายในเวลา & วันที่สั่งงาน (Wireframe Image 4) -->
+            <div class="flex flex-wrap items-center gap-3 mt-4 text-xs">
+                <div class="px-3.5 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 font-bold flex items-center space-x-1.5">
+                    <i class="fa-regular fa-clock text-amber-600"></i>
+                    <span>ส่งภายในเวลา: {{ project.due_date or 'ไม่ระบุกำหนดส่ง' }}</span>
+                </div>
+                <div class="px-3.5 py-1.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 font-bold flex items-center space-x-1.5">
+                    <i class="fa-regular fa-calendar text-sky-600"></i>
+                    <span>วันที่สั่งงาน: {{ project.created_at[:10] if (project.created_at and project.created_at is string) else (project.created_at.strftime('%Y-%m-%d') if project.created_at else 'เร็วๆ นี้') }}</span>
+                </div>
+                {% if project.alternate_link %}
+                <a href="{{ project.alternate_link }}" target="_blank" class="text-xs text-sky-600 hover:text-sky-700 font-bold inline-flex items-center">
+                    <i class="fa-solid fa-arrow-up-right-from-square mr-1 text-[10px]"></i> เปิดใน Classroom
+                </a>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- ความคืบหน้า (Wireframe Image 4 Progress Box) -->
+        <div class="w-full md:w-64 bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col justify-center">
+            <div class="flex justify-between text-xs text-slate-600 mb-1.5 font-bold">
+                <span>ความคืบหน้า</span>
+                <span id="detail-progress-percent" class="font-extrabold text-sky-600">0%</span>
+            </div>
+            <div class="w-full bg-slate-200 h-3 rounded-full overflow-hidden p-0.5">
+                <div id="detail-progress-bar" class="bg-gradient-to-r from-sky-500 to-amber-400 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+            <div class="flex justify-between items-center text-[10px] text-slate-400 mt-2">
+                <span id="detail-task-count">0/{{ project.subtasks|length }} Tasks สำเร็จ</span>
+                <span>{{ project.subtasks|sum(attribute='estimated_hours') }} ชม. รวม</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Checklist Card (Wireframe Image 4: Checklist) -->
+    <div class="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6">
+        <div class="flex justify-between items-center mb-5">
+            <div class="flex items-center space-x-2">
+                <span class="w-3 h-3 rounded-full bg-sky-500"></span>
+                <h2 class="text-base font-bold text-slate-900">Checklist งานย่อยที่ต้องทำ</h2>
+            </div>
+            <span class="text-xs text-slate-400">ติ๊กถูกเพื่อเปลี่ยนสถานะเป็น Done</span>
+        </div>
+
+        <div class="space-y-3" id="subtasks-container">
+            {% for task in project.subtasks %}
+            <div id="task-row-{{ task.id }}" class="p-4 rounded-2xl border border-slate-200 hover:border-sky-300 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4 {% if task.status == 'DONE' %}bg-slate-50 opacity-60{% else %}bg-white{% endif %}">
+                <div class="flex items-start space-x-3.5 flex-1 min-w-0">
+                    <!-- Checkbox Button (Wireframe Checklist Bullet) -->
+                    <button onclick="toggleDone('{{ task.id }}', this)" title="คลิกเพื่อเปลี่ยนสถานะงาน" class="w-6 h-6 rounded-lg border-2 {% if task.status == 'DONE' %}bg-amber-400 border-amber-400 text-slate-900{% else %}border-slate-300 text-transparent hover:border-amber-400 hover:text-amber-500{% endif %} flex items-center justify-center transition flex-shrink-0 mt-0.5 font-bold shadow-sm cursor-pointer active:scale-95">
+                        <i class="fa-solid fa-check text-xs"></i>
+                    </button>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-xs font-bold text-slate-400">#{{ task.task_order }}</span>
+                            <h3 class="text-sm font-bold text-slate-900 {% if task.status == 'DONE' %}line-through text-slate-400{% endif %}">
+                                {{ task.task_title }}
+                            </h3>
+                            {% if task.priority == 'HIGH' %}
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700">HIGH</span>
+                            {% elif task.priority == 'MEDIUM' %}
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">MED</span>
+                            {% else %}
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">LOW</span>
+                            {% endif %}
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1 leading-relaxed">{{ task.description or 'ไม่มีคำอธิบาย' }}</p>
+                        <div class="flex items-center space-x-4 text-[11px] text-slate-400 mt-2">
+                            <span><i class="fa-regular fa-clock mr-1 text-sky-600"></i>{{ task.estimated_hours }} ชม.</span>
+                            <span><i class="fa-regular fa-calendar-check mr-1 text-amber-500"></i>เป้าหมาย: {{ task.suggested_due_date or '-' }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Selector -->
+                <div class="flex items-center space-x-2 flex-shrink-0 self-end sm:self-center">
+                    <select onchange="updateSubtaskStatus('{{ task.id }}', this.value, this.closest('[id^=\'task-row-\']'))" class="text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 focus:ring-2 focus:ring-sky-500/20 cursor-pointer">
+                        <option value="TODO" {% if task.status == 'TODO' or task.status == 'To Do' %}selected{% endif %}>To Do</option>
+                        <option value="IN_PROGRESS" {% if task.status == 'IN_PROGRESS' or task.status == 'In Progress' %}selected{% endif %}>In Progress</option>
+                        <option value="DONE" {% if task.status == 'DONE' or task.status == 'Done' %}selected{% endif %}>Done</option>
+                    </select>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener("DOMContentLoaded", calculateProgress);
+
+    function calculateProgress() {
+        const rows = document.querySelectorAll("[id^='task-row-']");
+        let done = 0;
+        rows.forEach(r => {
+            const select = r.querySelector("select");
+            if (select && select.value === "DONE") done++;
+        });
+
+        const total = rows.length;
+        const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+
+        const percentEl = document.getElementById("detail-progress-percent");
+        const barEl = document.getElementById("detail-progress-bar");
+        const countEl = document.getElementById("detail-task-count");
+
+        if (percentEl) percentEl.textContent = `${percent}%`;
+        if (barEl) barEl.style.width = `${percent}%`;
+        if (countEl) countEl.textContent = `${done}/${total} Tasks สำเร็จ`;
+    }
+
+    function toggleDone(subtaskId, btnElement) {
+        // Find row safely either from button or id
+        const row = (btnElement ? btnElement.closest("[id^='task-row-']") : null) || document.getElementById(`task-row-${subtaskId}`);
+        if (!row) return;
+
+        const select = row.querySelector("select");
+        const currentStatus = select ? select.value : (row.classList.contains("opacity-60") ? "DONE" : "TODO");
+        const newStatus = currentStatus === "DONE" ? "TODO" : "DONE";
+
+        if (select) select.value = newStatus;
+        updateSubtaskStatus(subtaskId, newStatus, row);
+    }
+
+    async function updateSubtaskStatus(subtaskId, status, rowElement) {
+        const row = rowElement || document.getElementById(`task-row-${subtaskId}`);
+        
+        // 1. Optimistic Real-time UI Update ทันที! ไม่ต้องรอ Google Sheets ตอบ
+        if (row) {
+            const btn = row.querySelector("button");
+            const title = row.querySelector("h3");
+            const select = row.querySelector("select");
+            if (select) select.value = status;
+
+            if (status === 'DONE') {
+                row.classList.add("bg-slate-50", "opacity-60");
+                if (btn) btn.className = "w-6 h-6 rounded-lg border-2 bg-amber-400 border-amber-400 text-slate-900 flex items-center justify-center transition flex-shrink-0 mt-0.5 font-bold shadow-sm cursor-pointer active:scale-95";
+                if (title) title.classList.add("line-through", "text-slate-400");
+            } else {
+                row.classList.remove("bg-slate-50", "opacity-60");
+                if (btn) btn.className = "w-6 h-6 rounded-lg border-2 border-slate-300 text-transparent hover:border-amber-400 hover:text-amber-500 flex items-center justify-center transition flex-shrink-0 mt-0.5 font-bold shadow-sm cursor-pointer active:scale-95";
+                if (title) title.classList.remove("line-through", "text-slate-400");
+            }
+        }
+        calculateProgress();
+
+        // 2. ซิงค์สถานะไปยัง Google Sheets เบื้องหลัง
+        try {
+            const resp = await fetch(`/api/subtasks/${subtaskId}/status`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                showToast(`อัปเดตงานเป็น ${status} สำเร็จ`, 'success');
+            } else {
+                showToast(data.error || 'ไม่สามารถอัปเดตได้', 'error');
+            }
+        } catch (e) {
+            showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+        }
+    }
+</script>
+{% endblock %}

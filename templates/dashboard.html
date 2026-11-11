@@ -1,0 +1,412 @@
+{% extends "base.html" %}
+
+{% block title %}แดชบอร์ดสรุปงาน - ELEV8 AI Planner{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+    <!-- Top Profile & Search Header (Based on Wireframe Image 7 & 8) -->
+    <div class="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div class="flex items-center space-x-3.5">
+            <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-sky-400 to-sky-600 text-white flex items-center justify-center text-xl font-bold shadow-md shadow-sky-500/20">
+                <i class="fa-solid fa-user-graduate"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-slate-900 tracking-tight">สวัสดีนักศึกษา! 👋</h1>
+                <p class="text-xs text-slate-500">ระบบช่วยวางแผนการบ้านและโปรเจกต์ด้วย AI อัจฉริยะ</p>
+            </div>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="w-full sm:w-80 relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+            <input type="text" id="dashboard-search" onkeyup="filterDashboardProjects()" placeholder="ค้นหางาน หรือวิชา..." class="w-full pl-9 pr-4 py-2.5 text-xs rounded-2xl border border-slate-200 bg-slate-50/70 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition">
+        </div>
+        <!-- Clear Test Data Button -->
+        <button id="clear-data-btn" onclick="clearAllData()" title="ล้างข้อมูลทดสอบทั้งหมด"
+            class="flex-shrink-0 flex items-center px-3 py-2 rounded-xl bg-red-50 text-red-500 border border-red-200 hover:bg-red-100 hover:text-red-700 text-xs font-semibold transition active:scale-95">
+            <i class="fa-solid fa-trash mr-1.5"></i> ล้างข้อมูลทดสอบ
+        </button>
+    </div>
+
+    <!-- Section 1: วิชา (Courses Section - Wireframe Image 7) -->
+    <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
+        <div class="flex justify-between items-center mb-4">
+            <div class="flex items-center space-x-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
+                <h2 class="text-base font-bold text-slate-900">วิชาที่กำลังเรียน (Enrolled Courses)</h2>
+                <span class="text-xs text-slate-400 font-medium">({{ enrolled_courses|length }} วิชา)</span>
+            </div>
+            <a href="{{ url_for('classroom_view') }}" class="text-xs font-semibold text-sky-600 hover:text-sky-700 flex items-center">
+                <i class="fa-solid fa-cloud-arrow-down mr-1 text-[11px]"></i> ดึงงานจาก Classroom
+            </a>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3" id="course-cards-container">
+            <!-- All Courses reset button -->
+            <div onclick="selectCourseFilter('')" id="course-card-all" class="course-card p-3.5 rounded-2xl border-2 border-sky-400 bg-sky-50/50 transition text-center relative cursor-pointer active:scale-95 shadow-sm">
+                <div class="w-10 h-10 rounded-xl bg-sky-500 text-white mx-auto flex items-center justify-center text-sm font-bold mb-2 shadow-sm">
+                    <i class="fa-solid fa-layer-group"></i>
+                </div>
+                <p class="text-xs font-bold text-slate-900 truncate">ทั้งหมด (All)</p>
+                <p class="text-[10px] text-sky-600 font-medium mt-0.5">{{ projects|length }} งาน</p>
+            </div>
+
+            {% for c in enrolled_courses %}
+            <div onclick="selectCourseFilter(this.dataset.course)" data-course="{{ c.name }}" class="course-card p-3.5 rounded-2xl border border-slate-200/80 hover:border-sky-300 hover:bg-sky-50/30 transition text-center relative cursor-pointer active:scale-95">
+                <span class="absolute top-2 right-2 w-2.5 h-2.5 {% if c.project_count > 0 %}bg-amber-400{% else %}bg-slate-300{% endif %} rounded-full border-2 border-white shadow-sm"></span>
+                <div class="w-10 h-10 rounded-xl bg-sky-100 text-sky-700 mx-auto flex items-center justify-center text-sm font-bold mb-2">
+                    <i class="fa-solid fa-book-bookmark"></i>
+                </div>
+                <p class="text-xs font-bold text-slate-800 truncate" title="{{ c.name }}">{{ c.name }}</p>
+                <p class="text-[10px] text-slate-400 mt-0.5">{% if c.project_count > 0 %}{{ c.project_count }} งานในระบบ{% else %}ยังไม่มีงาน{% endif %}</p>
+            </div>
+            {% endfor %}
+
+            {% if enrolled_courses|length == 0 %}
+            <div class="col-span-full py-6 text-center text-xs text-slate-400">
+                <i class="fa-solid fa-graduation-cap text-2xl text-slate-300 mb-2"></i>
+                <p>ยังไม่มีข้อมูลวิชา กด "ดึงงานจาก Classroom" เพื่อโหลดรายชื่อวิชาอัตโนมัติ</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Section 2: 3 Highlight Cards (Wireframe Image 8) -->
+    <!-- 1. งานที่ต้องทำวันนี้ | 2. งานใกล้ครบกำหนด | 3. AI Daily Briefing -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+
+        <!-- Card 1: งานที่ต้องทำวันนี้ (Today's Focus) -->
+        <div class="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col justify-between relative overflow-hidden group hover:border-sky-300 transition">
+            <span class="absolute top-3 right-3 w-3 h-3 bg-amber-400 rounded-full border-2 border-white"></span>
+            <div>
+                <div class="flex items-center space-x-2.5 mb-3">
+                    <div class="w-9 h-9 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center text-sm">
+                        <i class="fa-solid fa-crosshairs"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-900">งานที่ต้องทำวันนี้</h3>
+                        <p class="text-[11px] text-slate-400">Today's Focus</p>
+                    </div>
+                </div>
+
+                {% if today_tasks %}
+                <div class="space-y-2 mt-3" id="today-tasks-container">
+                    {% for t in today_tasks[:5] %}
+                    <div id="today-task-{{ t.id }}" class="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs transition-all duration-300">
+                        <div class="truncate mr-2">
+                            <p class="font-bold text-slate-800 truncate task-title">{{ t.task_title }}</p>
+                            <span class="text-[10px] text-slate-400">{{ t.assignment_title }}</span>
+                        </div>
+                        <button onclick="updateTaskStatus('{{ t.id }}', 'DONE', this)" class="w-6 h-6 rounded-lg border-2 border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center text-transparent hover:text-emerald-600 transition flex-shrink-0 cursor-pointer">
+                            <i class="fa-solid fa-check text-[11px]"></i>
+                        </button>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-xs text-slate-400 py-6 text-center">ไม่มีงานค้างสำหรับวันนี้</p>
+                {% endif %}
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center text-xs">
+                <span class="font-semibold text-slate-500">{{ today_tasks|length }} งานที่ต้องทำ</span>
+                <span class="font-bold text-sky-600">โฟกัสวันนี้</span>
+            </div>
+        </div>
+
+        <!-- Card 2: งานใกล้ครบกำหนด (Upcoming Deadlines) -->
+        <div class="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col justify-between relative overflow-hidden group hover:border-amber-300 transition">
+            <span class="absolute top-3 right-3 w-3 h-3 bg-amber-400 rounded-full border-2 border-white"></span>
+            <div>
+                <div class="flex items-center space-x-2.5 mb-3">
+                    <div class="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center text-sm">
+                        <i class="fa-regular fa-clock"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-900">งานใกล้ครบกำหนด</h3>
+                        <p class="text-[11px] text-slate-400">Upcoming Deadlines</p>
+                    </div>
+                </div>
+
+                {% if upcoming %}
+                <div class="space-y-2 mt-3">
+                    {% for u in upcoming[:3] %}
+                    <a href="{{ url_for('project_detail', assignment_id=u.id) }}" class="block p-2.5 rounded-xl bg-slate-50 border border-slate-100 hover:border-sky-200 transition text-xs">
+                        <div class="flex justify-between items-start">
+                            <p class="font-bold text-slate-800 truncate mr-2">{{ u.title }}</p>
+                            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 whitespace-nowrap">{{ u.due_date_str }}</span>
+                        </div>
+                        <span class="text-[10px] text-slate-400">{{ u.course_name or 'คอร์สเรียน' }}</span>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-xs text-slate-400 py-6 text-center">ไม่มีงานที่ใกล้กำหนดส่ง</p>
+                {% endif %}
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center text-xs">
+                <span class="font-semibold text-slate-500">{{ upcoming|length }} งานที่ต้องส่ง</span>
+                <span class="font-bold text-amber-600">กำหนดส่ง</span>
+            </div>
+        </div>
+
+        <!-- Card 3: AI Daily Briefing (Wireframe Image 7 & 8) -->
+        <div class="bg-gradient-to-br from-sky-500 via-sky-600 to-sky-700 p-5 rounded-3xl text-white shadow-md shadow-sky-500/20 flex flex-col justify-between relative overflow-hidden">
+            <span class="absolute -right-4 -bottom-4 text-7xl text-white/10">🤖</span>
+            <div>
+                <div class="flex items-center space-x-2.5 mb-3">
+                    <div class="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-sm shadow-inner">
+                        🤖
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-white">AI Daily Briefing</h3>
+                        <p class="text-[11px] text-sky-200">คำแนะนำประจำวัน</p>
+                    </div>
+                </div>
+                <p class="text-xs text-sky-50 leading-relaxed font-normal mt-2 line-clamp-4">
+                    {{ ai_briefing }}
+                </p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-white/20 flex justify-between items-center text-xs text-sky-100">
+                <span>สรุปโดย AI</span>
+                <span class="font-bold px-2 py-0.5 rounded-full bg-amber-400 text-slate-900 text-[10px]">Real-time</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Section 3: สถิติความคืบหน้า (Progress Statistics - Wireframe Image 8) -->
+    <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+            <div>
+                <h2 class="text-base font-bold text-slate-900">สถิติความคืบหน้า (Progress Overview)</h2>
+                <p class="text-xs text-slate-500">อัตราความสำเร็จของงานทั้งหมดและการแบ่งเวลา</p>
+            </div>
+            <div class="flex items-center space-x-3">
+                <div class="text-right">
+                    <span class="text-xs text-slate-400">ความสำเร็จรวม</span>
+                    <p class="text-xl font-extrabold text-sky-600 leading-none">{{ metrics.completion_rate }}%</p>
+                </div>
+                <div class="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center text-sm font-bold">
+                    <i class="fa-solid fa-chart-pie"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Big Progress Bar -->
+        <div class="w-full bg-slate-100 h-3.5 rounded-full overflow-hidden p-0.5 border border-slate-200/70">
+            <div class="bg-gradient-to-r from-sky-500 to-amber-400 h-2.5 rounded-full transition-all duration-700" style="width: {{ metrics.completion_rate }}%"></div>
+        </div>
+
+        <!-- Mini Stats Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
+            <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-center">
+                <span class="text-[11px] font-bold text-slate-400 uppercase">โปรเจกต์</span>
+                <p class="text-lg font-bold text-slate-900 mt-0.5">{{ metrics.total_assignments }}</p>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-center">
+                <span class="text-[11px] font-bold text-slate-400 uppercase">งานที่เสร็จแล้ว</span>
+                <p class="text-lg font-bold text-emerald-600 mt-0.5">{{ metrics.done_subtasks }}/{{ metrics.total_subtasks }}</p>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-center">
+                <span class="text-[11px] font-bold text-slate-400 uppercase">กำลังทำ (In Progress)</span>
+                <p class="text-lg font-bold text-sky-600 mt-0.5">{{ metrics.in_progress_subtasks }}</p>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-center">
+                <span class="text-[11px] font-bold text-slate-400 uppercase">เวลาที่ประเมิน</span>
+                <p class="text-lg font-bold text-amber-600 mt-0.5">{{ metrics.total_hours }} ชม.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 4: งานใกล้ครบกำหนด & รายการโปรเจกต์ (Wireframe Image 10) -->
+    <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
+        <div class="flex justify-between items-center mb-5">
+            <div>
+                <h2 class="text-base font-bold text-slate-900">โปรเจกต์และการบ้านทั้งหมด</h2>
+                <p class="text-xs text-slate-500">คลิกที่การบ้านเพื่อดูรายละเอียดและ Task Detail Checklist</p>
+            </div>
+            <a href="{{ url_for('classroom_view') }}" class="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-xl text-xs font-bold transition">
+                <i class="fa-solid fa-plus mr-1"></i> เพิ่มงานใหม่
+            </a>
+        </div>
+
+        {% if projects %}
+        <div class="space-y-3.5" id="projects-list-container">
+            {% for proj in projects %}
+            <div class="p-4 rounded-2xl border border-slate-200/80 hover:border-sky-300 hover:shadow-sm bg-white transition flex flex-col md:flex-row md:items-center justify-between gap-4 group">
+                <div class="flex items-start space-x-3.5 flex-1 min-w-0">
+                    <!-- Circle Avatar / Icon (Wireframe Image 10) -->
+                    <div class="w-10 h-10 rounded-2xl bg-sky-50 text-sky-600 border border-sky-100 flex items-center justify-center font-bold text-sm flex-shrink-0 mt-0.5">
+                        <i class="fa-solid fa-list-check"></i>
+                    </div>
+
+                    <div class="flex-1 min-w-0">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <a href="{{ url_for('project_detail', assignment_id=proj.id) }}" class="font-bold text-sm text-slate-900 hover:text-sky-600 transition truncate">
+                                {{ proj.title }}
+                            </a>
+                            <!-- แท็กวิชา (Wireframe Tag) -->
+                            <span class="text-[10px] font-bold px-2.5 py-0.5 rounded-md bg-sky-100 text-sky-800 border border-sky-200">
+                                {{ proj.course_name or 'วิชาทั่วไป' }}
+                            </span>
+                            <!-- แท็กกำหนดส่ง -->
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                                {{ proj.due_date_str }}
+                            </span>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1 line-clamp-1">{{ proj.description or 'ไม่มีคำอธิบาย' }}</p>
+                    </div>
+                </div>
+
+                <!-- ความคืบหน้า Progress Bar (Wireframe Image 10) -->
+                <div class="flex items-center space-x-4 md:w-64 justify-between md:justify-end">
+                    <div class="w-36">
+                        <div class="flex justify-between text-[11px] text-slate-500 mb-1">
+                            <span>ความคืบหน้า</span>
+                            <span class="font-bold text-slate-800">{{ proj.progress_percent }}%</span>
+                        </div>
+                        <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                            <div class="bg-gradient-to-r from-sky-500 to-amber-400 h-2 rounded-full transition-all duration-500" style="width: {{ proj.progress_percent }}%"></div>
+                        </div>
+                    </div>
+
+                    <a href="{{ url_for('project_detail', assignment_id=proj.id) }}" class="px-3.5 py-2 bg-slate-100 hover:bg-sky-500 hover:text-white text-slate-700 rounded-xl text-xs font-semibold transition">
+                        ดูงาน <i class="fa-solid fa-chevron-right ml-1 text-[10px]"></i>
+                    </a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-12">
+            <div class="w-14 h-14 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center text-xl mx-auto mb-3">
+                <i class="fa-solid fa-folder-open"></i>
+            </div>
+            <h3 class="text-sm font-bold text-slate-900">ยังไม่มีการบ้านในระบบ</h3>
+            <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">กดปุ่มด้านล่างเพื่อเชื่อมต่อกับ Google Classroom และเลือกการบ้านมาวางแผน</p>
+            <a href="{{ url_for('classroom_view') }}" class="inline-flex items-center px-4 py-2 mt-4 bg-sky-600 text-white rounded-xl text-xs font-bold hover:bg-sky-700 transition">
+                <i class="fa-solid fa-cloud-arrow-down mr-2"></i> นำเข้าการบ้านจาก Classroom
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function updateTaskStatus(subtaskId, status, btnElement) {
+        // 1. Optimistic Real-time UI: ขีดฆ่าและเปลี่ยนสีทันที ไม่ต้องรีโหลดหน้าเว็บ!
+        const row = document.getElementById(`today-task-${subtaskId}`) || (btnElement ? btnElement.closest('.flex') : null);
+        if (row) {
+            const title = row.querySelector('.task-title') || row.querySelector('p');
+            if (title) title.classList.add('line-through', 'text-slate-400');
+            if (btnElement) {
+                btnElement.className = "w-6 h-6 rounded-lg border-2 bg-emerald-500 border-emerald-500 text-white flex items-center justify-center transition flex-shrink-0 shadow-sm";
+            }
+            setTimeout(() => {
+                row.style.opacity = '0';
+                row.style.transform = 'translateX(20px)';
+                setTimeout(() => row.remove(), 250);
+            }, 500);
+        }
+
+        // 2. บันทึกข้อมูลไปยัง Google Sheets เบื้องหลังแบบ Real-time
+        try {
+            const resp = await fetch(`/api/subtasks/${subtaskId}/status`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                showToast(`อัปเดตสถานะงานเป็น ${status} สำเร็จ`, 'success');
+            } else {
+                showToast(data.error || 'ไม่สามารถอัปเดตสถานะได้', 'error');
+            }
+        } catch (e) {
+            showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+        }
+    }
+
+    let activeCourseFilter = "";
+
+    function selectCourseFilter(courseName) {
+        const searchInput = document.getElementById("dashboard-search");
+
+        // Toggle: if click the already active course, reset to all
+        if (activeCourseFilter === courseName && courseName !== "") {
+            courseName = "";
+        }
+        activeCourseFilter = courseName;
+
+        if (searchInput) {
+            searchInput.value = courseName;
+            filterDashboardProjects();
+        }
+
+        // Highlight active card
+        document.querySelectorAll(".course-card").forEach(card => {
+            const isAllBtn = card.id === "course-card-all";
+            const cardCourse = card.dataset.course || "";
+
+            if ((courseName === "" && isAllBtn) || (courseName !== "" && cardCourse === courseName)) {
+                card.className = "course-card p-3.5 rounded-2xl border-2 border-sky-400 bg-sky-50/70 transition text-center relative cursor-pointer active:scale-95 shadow-sm";
+            } else {
+                card.className = "course-card p-3.5 rounded-2xl border border-slate-200/80 hover:border-sky-300 hover:bg-sky-50/30 transition text-center relative cursor-pointer active:scale-95";
+            }
+        });
+
+        if (courseName) {
+            showToast(`กรองเฉพาะวิชา: ${courseName}`, 'info');
+        } else {
+            showToast('แสดงงานทุกวิชา', 'info');
+        }
+
+        // Scroll safely
+        const container = document.getElementById("projects-list-container");
+        if (container) {
+            container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    function filterByCourse(courseName) {
+        selectCourseFilter(courseName);
+    }
+
+    function filterDashboardProjects() {
+        const query = (document.getElementById("dashboard-search")?.value || "").toLowerCase().trim();
+        const rows = document.querySelectorAll("#projects-list-container > div");
+        let visibleCount = 0;
+        rows.forEach(r => {
+            const text = r.textContent.toLowerCase();
+            const matched = query === "" || text.includes(query);
+            r.style.display = matched ? "flex" : "none";
+            if (matched) visibleCount++;
+        });
+    }
+
+    async function clearAllData() {
+        // Confirmation dialog
+        if (!confirm('⚠️ ยืนยันการลบข้อมูลทั้งหมด?\n\nระบบจะลบข้อมูลงานและ subtask ทั้งหมดออกจาก Google Sheets\n\n(ใช้สำหรับล้างข้อมูลทดสอบเท่านั้น)')) return;
+        const btn = document.getElementById('clear-data-btn');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> กำลังล้าง...'; }
+        try {
+            const resp = await fetch('/api/clear-data', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+            const data = await resp.json();
+            if (data.success) {
+                showToast(data.message || 'ล้างข้อมูลสำเร็จ', 'success');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                showToast(data.error || 'เกิดข้อผิดพลาด', 'error');
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-trash mr-1"></i> ล้างข้อมูลทดสอบ'; }
+            }
+        } catch (e) {
+            showToast('เชื่อมต่อไม่ได้', 'error');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-trash mr-1"></i> ล้างข้อมูลทดสอบ'; }
+        }
+    }
+</script>
+{% endblock %}

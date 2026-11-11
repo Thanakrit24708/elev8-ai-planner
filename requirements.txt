@@ -1,0 +1,17 @@
+# Google Classroom API & OAuth 2.0
+google-api-python-client>=2.100.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.0
+
+# MariaDB / MySQL Connector
+pymysql>=1.1.0
+cryptography>=41.0.0
+
+# AI Client (Gemini SDK & generic Chat API HTTP client)
+google-genai>=0.1.1
+requests>=2.31.0
+
+# Retry logic & Utilities
+tenacity>=8.2.3
+python-dotenv>=1.0.1
+pydantic>=2.6.0

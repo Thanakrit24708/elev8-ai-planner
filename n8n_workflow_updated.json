@@ -1,0 +1,288 @@
+{
+  "name": "ELEV8 AI Planner - Complete Workflow (Fixed)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "project-planner",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "370867dd-dc99-4bfb-8683-e109d68b056d",
+      "name": "Webhook Trigger1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -784,
+        752
+      ],
+      "webhookId": "49bc34b1-b10c-43fe-9ee4-8ed97c2cd3ce"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json.body || $input.first().json;\n\nreturn {\n  assignment_id: String(input.assignment_id || 'PRJ-' + Date.now()),\n  course_id: String(input.course_id || ''),\n  course_name: String(input.course_name || 'General Course'),\n  project_name: input.project_name || 'Untitled Project',\n  goal_description: input.goal_description || input.project_name || '',\n  deadline: input.deadline || new Date(Date.now() + 7*24*60*60*1000).toISOString(),\n  alternate_link: input.alternate_link || '',\n  team_members: input.team_members || [],\n  retry_count: 0,\n  error_logs: [],\n  is_valid: false\n};"
+      },
+      "id": "9a29d7d5-d38a-4f5c-9059-9369e8de69f2",
+      "name": "Initialize State1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "{\n  \"Content-Type\": \"application/json\"\n}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  \"model\": \"gpt-4o-mini\",\n  \"response_format\": { \"type\": \"json_object\" },\n  \"temperature\": 0.2,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an expert AI Project Manager and Academic Coach. Analyze the project goal, deadline, and break down the project into 3 to 7 sequential subtasks.\\n\\nCRITICAL INSTRUCTION:\\nAll subtask titles and descriptions MUST be in THAI language (ภาษาไทย).\\n\\nOutput MUST be valid JSON with this exact structure:\\n{\\n  \\\"project_id\\\": \\\"\" + $json.assignment_id + \"\\\",\\n  \\\"project_summary\\\": \\\"สรุปแผนงานเป็นภาษาไทย\\\",\\n  \\\"total_estimated_hours\\\": 20,\\n  \\\"subtasks\\\": [\\n    {\\n      \\\"task_id\\\": \\\"T1\\\",\\n      \\\"task_order\\\": 1,\\n      \\\"title\\\": \\\"ชื่องานย่อยเป็นภาษาไทย\\\",\\n      \\\"priority\\\": \\\"High|Medium|Low\\\",\\n      \\\"estimated_hours\\\": 3,\\n      \\\"dependencies\\\": [],\\n      \\\"assignee\\\": \\\"Student\\\",\\n      \\\"status\\\": \\\"TODO\\\"\\n    }\\n  ]\\n}\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Course: \" + $json.course_name + \"\\nProject Name: \" + $json.project_name + \"\\nGoal: \" + $json.goal_description + \"\\nDeadline: \" + $json.deadline + ($json.error_logs && $json.error_logs.length > 0 ? \"\\n\\nPREVIOUS VALIDATION ERRORS (PLEASE FIX):\\n\" + $json.error_logs.join(\"\\n\") : \"\")\n    }\n  ]\n}) }}",
+        "options": {}
+      },
+      "id": "fbf1f84b-9ed5-414e-8089-1e18c739e1f6",
+      "name": "AI Task Decomposition (HTTP Request)1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -336,
+        752
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nb05Y9UatwdVi7Zn",
+          "name": "Header Auth account 77"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nlet rawContent = '';\n\ntry {\n  rawContent = response.choices[0].message.content;\n} catch (e) {\n  rawContent = '{}';\n}\n\nlet blueprint = {};\ntry {\n  blueprint = JSON.parse(rawContent);\n} catch (e) {\n  blueprint = { subtasks: [] };\n}\n\nconst state = $node['Initialize State1'].json;\nconst currentRetry = ($json.retry_count || 0) + 1;\nconst deadlineDate = new Date(state.deadline);\nconst errors = [];\nconst subtasks = blueprint.subtasks || [];\n\n// 1. Completeness Check\nif (subtasks.length < 3) {\n  errors.push('Decomposition is too brief. Need at least 3 distinct subtasks.');\n}\nsubtasks.forEach((t, i) => {\n  if (!t.title) {\n    errors.push(`Task #${i+1} is missing title.`);\n  }\n});\n\n// 2. Circular Dependency Check\nconst visited = new Set();\nconst recStack = new Set();\nconst adjMap = {};\nsubtasks.forEach(t => adjMap[t.task_id || t.title] = t.dependencies || []);\n\nfunction hasCycle(node) {\n  if (!visited.has(node)) {\n    visited.add(node);\n    recStack.add(node);\n    const neighbors = adjMap[node] || [];\n    for (const neighbor of neighbors) {\n      if (!visited.has(neighbor) && hasCycle(neighbor)) return true;\n      else if (recStack.has(neighbor)) return true;\n    }\n  }\n  recStack.delete(node);\n  return false;\n}\n\nfor (const t of subtasks) {\n  const key = t.task_id || t.title;\n  if (hasCycle(key)) {\n    errors.push(`Circular dependency detected in task: ${key}`);\n    break;\n  }\n}\n\nconst isValid = errors.length === 0;\n\nreturn {\n  assignment_id: state.assignment_id,\n  course_id: state.course_id,\n  course_name: state.course_name,\n  project_name: state.project_name,\n  goal_description: state.goal_description,\n  deadline: state.deadline,\n  alternate_link: state.alternate_link,\n  team_members: state.team_members,\n  blueprint: blueprint,\n  is_valid: isValid,\n  retry_count: currentRetry,\n  error_logs: errors,\n  manual_review_required: !isValid && currentRetry >= 3\n};"
+      },
+      "id": "2c0cf09f-2e07-4a2f-8020-d4a7fcc8bf07",
+      "name": "Validation Engine1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -112,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_valid }}",
+              "value2": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5dc2ce2c-b304-4fb8-95f1-b411158a57cc",
+      "name": "Validation Router1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        112,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const state = $input.first().json;\nconst subtasks = state.blueprint.subtasks || [];\n\nreturn subtasks.map((t, idx) => {\n  return {\n    json: {\n      id: `${state.assignment_id}_${idx + 1}`,\n      assignment_id: state.assignment_id,\n      task_order: idx + 1,\n      task_title: t.title || t.task_title || `งานย่อยที่ ${idx + 1}`,\n      description: `ผู้รับผิดชอบ: ${t.assignee || 'Student'} | ความเกี่ยวโยง: ${(t.dependencies || []).join(', ') || '-'}`,\n      priority: (t.priority || 'MEDIUM').toUpperCase(),\n      estimated_hours: Number(t.estimated_hours || 1),\n      suggested_start_date: '',\n      suggested_due_date: state.deadline,\n      status: 'TODO'\n    }\n  };\n});"
+      },
+      "id": "b3e94471-70bf-4f6c-8423-f368940c3cb0",
+      "name": "Prepare Subtask Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pYAR9Uqec80dKSRvHt8pStGBcxJlbf62RfAFvNSToSI/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Subtasks",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        560,
+        752
+      ],
+      "id": "f3ec6f9c-9577-4ff3-9882-509b84633f11",
+      "name": "Append Subtasks to Sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Yn43qys3Qoze7adA",
+          "name": "Google Sheets account 207"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "skyzy3285@gmail.com",
+        "toEmail": "=kanrawee.wanc@gmail.com",
+        "subject": "=[ELEV8 AI Planner] สร้างแผนงานใหม่: {{ $('Initialize State1').item.json.project_name }}",
+        "text": "=วิชา: {{ $('Initialize State1').item.json.course_name }}\nโปรเจกต์: {{ $('Initialize State1').item.json.project_name }}\nกำหนดส่ง: {{ $('Initialize State1').item.json.deadline }}\n\nผลการตรวจสอบ: ผ่านเกณฑ์เรียบร้อย (Valid)\nจำนวนงานย่อย: {{ $('Validation Engine1').item.json.blueprint.subtasks.length }} งาน\n\nแผนงานได้ถูกบันทึกลง Google Sheets และส่งเข้าแดชบอร์ดเรียบร้อยแล้วครับ!",
+        "options": {}
+      },
+      "id": "8d9544cc-5af7-4aee-ae6b-991c43f5760c",
+      "name": "Send Email Notification1",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        784,
+        752
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "ownEAK8VDHBp4VXj",
+          "name": "SMTP account 26"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  status: 'success',\n  assignment_id: $('Initialize State1').item.json.assignment_id,\n  project_name: $('Initialize State1').item.json.project_name,\n  blueprint: $('Validation Engine1').item.json.blueprint,\n  validation: {\n    is_valid: true,\n    retry_count: $('Validation Engine1').item.json.retry_count,\n    errors: []\n  }\n}) }}",
+        "options": {}
+      },
+      "id": "dc4a84b8-9189-4cd6-8689-3358cdc7129d",
+      "name": "Respond to Webhook1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1008,
+        752
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Initialize State1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize State1": {
+      "main": [
+        [
+          {
+            "node": "AI Task Decomposition (HTTP Request)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Task Decomposition (HTTP Request)1": {
+      "main": [
+        [
+          {
+            "node": "Validation Engine1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation Engine1": {
+      "main": [
+        [
+          {
+            "node": "Validation Router1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation Router1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Subtask Rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Task Decomposition (HTTP Request)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Subtask Rows": {
+      "main": [
+        [
+          {
+            "node": "Append Subtasks to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Subtasks to Sheet": {
+      "main": [
+        [
+          {
+            "node": "Send Email Notification1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email Notification1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  }
+}
